@@ -1,15 +1,9 @@
 """
 tools.py — All agent tools live here.
-
-Any agent (Developer, Tester, Debugger, etc.) that needs a tool
-imports it from this file, instead of tools being scattered across
-every agent's own file.
-
-More tools (run_tests, git_commit, etc.) will be added here later —
-this file grows as the project grows, agent files don't need to change.
 """
 
 from langchain_core.tools import tool
+import subprocess
 
 
 @tool
@@ -18,3 +12,16 @@ def write_file(path: str, content: str) -> str:
     with open(path, "w") as f:
         f.write(content)
     return f"File '{path}' written successfully ({len(content)} chars)."
+
+
+@tool
+def run_tests(test_file: str) -> str:
+    """Run a pytest test file and return the pass/fail results as text."""
+    result = subprocess.run(
+        ["pytest", test_file, "-v"],
+        capture_output=True,
+        text=True,
+    )
+    output = result.stdout + "\n" + result.stderr
+    status = "PASSED" if result.returncode == 0 else "FAILED"
+    return f"Test run status: {status}\n\n{output}"
