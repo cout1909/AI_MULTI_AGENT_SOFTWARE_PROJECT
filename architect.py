@@ -1,12 +1,9 @@
 """
-Architect Agent — same pattern as planner.py: structured output, no tools.
+Architect Agent - same pattern as planner.py: structured output, no tools.
 
 Takes the Planner's task list and decides HOW to build it technically:
 what libraries to use, what the file structure should look like,
 any design notes the Developer agent should follow.
-
-No new concepts here on purpose — reusing with_structured_output()
-exactly like the Planner. Proves you can reuse a pattern across agents.
 """
 
 import os
@@ -48,9 +45,10 @@ Requirement: {requirement}
 Planned tasks:
 {tasks_text}
 
-Decide the technical approach: what libraries are needed (keep it minimal,
-standard library where possible), what files should exist, and for each file,
-its purpose and the key functions/classes it should contain.
+This project is Python-only. Decide the technical approach: what libraries
+are needed (keep it minimal, standard library where possible), what files
+should exist, and for each file, its purpose and the key functions/classes
+it should contain.
 """
 
     architecture = structured_llm.invoke(prompt)
@@ -58,8 +56,6 @@ its purpose and the key functions/classes it should contain.
 
 
 if __name__ == "__main__":
-    # For now, hardcoded example. Later this will chain directly
-    # from planner.py's output automatically.
     requirement = "Build a function that adds two numbers"
     task_descriptions = [
         "Implement the add function that takes two numbers and returns their sum.",
@@ -72,6 +68,6 @@ if __name__ == "__main__":
     print("\nLibraries needed:", architecture.libraries_needed)
     print("\nFiles:")
     for f in architecture.files:
-        print(f"  {f.filename} — {f.purpose}")
+        print(f"  {f.filename} - {f.purpose}")
         for item in f.key_functions_or_classes:
             print(f"    - {item}")

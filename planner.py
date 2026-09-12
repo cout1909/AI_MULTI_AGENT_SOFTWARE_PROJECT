@@ -49,8 +49,12 @@ def get_plan(requirement: str) -> Plan:
 Break the following requirement into a small list of concrete coding tasks.
 Each task should map to ONE file to create.
 
+IMPORTANT: This project is Python-only. Every file_to_create MUST end in .py
+and every task must describe Python code. Do not use any other language.
+
 Requirement: {requirement}
 """
+    
     # Notice: no JSON instructions needed in the prompt anymore.
     # LangChain handles telling the model how to format its response
     # based on the Pydantic schema we gave it above.
