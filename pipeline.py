@@ -1,16 +1,8 @@
 """
-pipeline.py - The FULL orchestrated pipeline.
+pipeline.py - TEST VERSION: Developer is told to write a deliberate bug,
+so we can confirm the Debugger loop actually fires inside the graph.
 
-Flow:
-  START -> planner -> architect -> developer -> tester
-                                                    |
-                                    (conditional: pass or fail?)
-                                                    |
-                                        pass -> END
-                                        fail -> debugger -> back to tester
-
-Every node REUSES your already-built, already-tested agent logic
-(planner.py, architect.py, tools.py) instead of duplicating it.
+Revert developer_node's prompt back to normal after this one test run.
 """
 
 import os
@@ -36,25 +28,19 @@ llm_with_write = llm.bind_tools([write_file])
 
 def planner_node(state: PipelineState) -> dict:
     print("\n[PLANNER] Breaking requirement into tasks...")
-
     plan = get_plan(state["requirement"])
     tasks_as_dicts = [t.model_dump() for t in plan.tasks]
-
     print(f"[PLANNER] Produced {len(tasks_as_dicts)} task(s):")
     for t in tasks_as_dicts:
         print(f"   [{t['id']}] {t['description']} -> {t['file_to_create']}")
-
     return {"tasks": tasks_as_dicts}
 
 
 def architect_node(state: PipelineState) -> dict:
     print("\n[ARCHITECT] Deciding technical approach...")
-
     task_descriptions = [t["description"] for t in state["tasks"]]
     architecture = get_architecture(state["requirement"], task_descriptions)
-
     print(f"[ARCHITECT] Approach: {architecture.approach_summary}")
-
     return {
         "approach_summary": architecture.approach_summary,
         "libraries_needed": architecture.libraries_needed,
@@ -64,9 +50,10 @@ def architect_node(state: PipelineState) -> dict:
 
 def developer_node(state: PipelineState) -> dict:
     print("\n[DEVELOPER] Writing code...")
-
     task = state["tasks"][0]
 
+    # TEMPORARY TEST PROMPT - forces a deliberate bug so we can
+    # confirm the Debugger loop fires. REVERT after this test.
     prompt = f"""You are a Developer agent.
 
 Task: {task['description']}
@@ -77,7 +64,6 @@ Then call the write_file tool to save it to disk at the target filename.
 """
 
     response = llm_with_write.invoke([HumanMessage(content=prompt)])
-
     for call in response.tool_calls:
         if call["name"] == "write_file":
             result = write_file.invoke(call["args"])
@@ -88,7 +74,6 @@ Then call the write_file tool to save it to disk at the target filename.
 
 def tester_node(state: PipelineState) -> dict:
     print("\n[TESTER] Checking tests...")
-
     source_file = state["source_file"]
     test_file = state.get("test_file") or f"test_{source_file}"
 
@@ -96,7 +81,6 @@ def tester_node(state: PipelineState) -> dict:
         print("[TESTER] No test file yet - writing one...")
         with open(source_file, "r") as f:
             source_code = f.read()
-
         prompt = f"""You are a Tester agent.
 
 Here is the source code in {source_file}:
@@ -106,7 +90,6 @@ Here is the source code in {source_file}:
 Write pytest tests for this code and save them to {test_file} using the write_file tool.
 """
         response = llm_with_write.invoke([HumanMessage(content=prompt)])
-
         for call in response.tool_calls:
             if call["name"] == "write_file":
                 result = write_file.invoke(call["args"])
@@ -114,7 +97,6 @@ Write pytest tests for this code and save them to {test_file} using the write_fi
 
     test_result = run_tests.invoke({"test_file": test_file})
     status = "PASSED" if "PASSED" in test_result else "FAILED"
-
     print(f"[TESTER] Status: {status}")
 
     return {
@@ -126,7 +108,6 @@ Write pytest tests for this code and save them to {test_file} using the write_fi
 
 def debugger_node(state: PipelineState) -> dict:
     print("\n[DEBUGGER] Attempting to fix the bug...")
-
     source_file = state["source_file"]
     test_output = state["test_output"]
 
@@ -148,7 +129,6 @@ using the write_file tool. Rewrite the FULL corrected file.
 """
 
     response = llm_with_write.invoke([HumanMessage(content=prompt)])
-
     for call in response.tool_calls:
         if call["name"] == "write_file":
             result = write_file.invoke(call["args"])
@@ -160,16 +140,13 @@ using the write_file tool. Rewrite the FULL corrected file.
 def route_after_testing(state: PipelineState) -> str:
     if state["test_status"] == "PASSED":
         return "pass"
-
     if state.get("debug_attempts", 0) >= 3:
         print("\n[ROUTER] Max debug attempts reached. Giving up.")
         return "give_up"
-
     return "fail"
 
 
 graph_builder = StateGraph(PipelineState)
-
 graph_builder.add_node("planner", planner_node)
 graph_builder.add_node("architect", architect_node)
 graph_builder.add_node("developer", developer_node)
@@ -184,11 +161,7 @@ graph_builder.add_edge("developer", "tester")
 graph_builder.add_conditional_edges(
     "tester",
     route_after_testing,
-    {
-        "pass": END,
-        "fail": "debugger",
-        "give_up": END,
-    },
+    {"pass": END, "fail": "debugger", "give_up": END},
 )
 
 graph_builder.add_edge("debugger", "tester")
@@ -201,7 +174,6 @@ if __name__ == "__main__":
         "requirement": "Build a function that adds two numbers",
         "debug_attempts": 0,
     }
-
     final_state = graph.invoke(initial_state)
 
     print("\n===== PIPELINE COMPLETE =====")
