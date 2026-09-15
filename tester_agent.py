@@ -1,22 +1,12 @@
 """
-Tester Agent — v2, with a REAL agent loop.
-
-The previous version only gave the model ONE turn to respond, so it
-could only call ONE tool (write_file) and then stopped.
-
-This version keeps the conversation going: after each tool call, we
-feed the RESULT back to the model and ask "what's next?" — repeating
-until the model has no more tool calls to make.
-
-This is the actual mechanism that makes multi-step agents work,
-and it's the same pattern the Debugger will need later
-(fix code -> retest -> check result -> maybe fix again -> ...).
+Tester Agent - reusable functions, used by BOTH the standalone script
+and pipeline.py.
 """
 
 import os
 from dotenv import load_dotenv
 from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage, ToolMessage
+from langchain_core.messages import HumanMessage
 from tools import write_file, run_tests
 
 load_dotenv()
@@ -26,59 +16,57 @@ llm = ChatGoogleGenerativeAI(
     google_api_key=os.environ["GEMINI_API_KEY"],
 )
 
-llm_with_tools = llm.bind_tools([write_file, run_tests])
-
-AVAILABLE_TOOLS = {
-    "write_file": write_file,
-    "run_tests": run_tests,
-}
+llm_with_write = llm.bind_tools([write_file])
 
 
-def run_tester(source_file: str, test_file: str, max_turns: int = 5):
-    with open(source_file, "r") as f:
-        source_code = f.read()
+def test_filename_for(source_file: str) -> str:
+    base_name = os.path.basename(source_file)
+    name_no_ext, ext = os.path.splitext(base_name)
+    if ext == ".py":
+        return f"test_{base_name}"
+    return f"{name_no_ext}.test{ext}"
 
-    prompt = f"""You are a Tester agent.
+
+def write_tests_for_file(source_file: str, test_framework: str = "pytest") -> str:
+    test_file = test_filename_for(source_file)
+
+    if not os.path.exists(test_file):
+        print(f"[TESTER] Writing {test_file}...")
+        with open(source_file, "r") as f:
+            source_code = f.read()
+
+        prompt = f"""You are a Tester agent.
 
 Here is the source code in {source_file}:
 
 {source_code}
 
-Write pytest tests for this code and save them to {test_file} using the write_file tool.
-Then run the tests using the run_tests tool on {test_file}.
-Only stop once you have both written AND run the tests.
+Test framework to use: {test_framework}
+
+Write tests for this code using {test_framework} and save them to
+{test_file} using the write_file tool.
 """
-
-    messages = [HumanMessage(content=prompt)]
-
-    for turn in range(max_turns):
-        response = llm_with_tools.invoke(messages)
-        messages.append(response)
-
-        if not response.tool_calls:
-            print(f"Model finished after {turn + 1} turn(s). Final message:")
-            print(response.content)
-            return
-
+        response = llm_with_write.invoke([HumanMessage(content=prompt)])
         for call in response.tool_calls:
-            tool_name = call["name"]
-            tool_fn = AVAILABLE_TOOLS.get(tool_name)
+            if call["name"] == "write_file":
+                result = write_file.invoke(call["args"])
+                print(f"[TESTER] {result}")
 
-            print(f"Turn {turn + 1}: Model calls {tool_name}({call['args']})")
+    return test_file
 
-            if tool_fn:
-                result = tool_fn.invoke(call["args"])
-                print(f"Result:\n{result}\n")
-            else:
-                result = f"Error: unknown tool '{tool_name}'"
-                print(result)
 
-            messages.append(
-                ToolMessage(content=str(result), tool_call_id=call["id"])
-            )
-
-    print(f"Stopped after {max_turns} turns without the model finishing on its own.")
+def run_all_tests(test_files: list, test_framework: str = "pytest") -> dict:
+    test_result = run_tests.invoke({
+        "test_files": test_files,
+        "test_framework": test_framework,
+    })
+    status = "PASSED" if "PASSED" in test_result else "FAILED"
+    return {"status": status, "output": test_result}
 
 
 if __name__ == "__main__":
-    run_tester(source_file="calculator.py", test_file="test_calculator.py")
+    source_file = "calculator.py"
+    test_file = write_tests_for_file(source_file)
+    result = run_all_tests([test_file])
+    print(f"\nStatus: {result['status']}")
+    print(result["output"])

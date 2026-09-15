@@ -1,14 +1,6 @@
 """
-Planner Agent — LangChain version.
-
-Compare this to step1_planner.py (raw Google SDK version):
-- We used to manually write the prompt asking for JSON,
-  manually strip markdown fences, manually json.loads(), then
-  manually validate with Pydantic.
-- LangChain's `.with_structured_output()` does ALL of that for us.
-  We just describe the shape (Pydantic model) and pass it in —
-  LangChain handles prompting the model correctly AND parsing/
-  validating the response.
+Planner Agent - LangChain version. Produces SOURCE CODE tasks only -
+testing is owned entirely by the Tester agent, not planned here.
 """
 
 import os
@@ -20,7 +12,6 @@ from typing import List
 load_dotenv()
 
 
-# Same Pydantic schema as before — this part doesn't change.
 class Task(BaseModel):
     id: int
     description: str
@@ -32,15 +23,11 @@ class Plan(BaseModel):
     tasks: List[Task]
 
 
-# Set up the LangChain chat model (same as concept1_basic_call.py)
 llm = ChatGoogleGenerativeAI(
     model="gemini-3.6-flash",
     google_api_key=os.environ["GEMINI_API_KEY"],
 )
 
-# THE KEY LINE: this wraps our llm so that instead of returning
-# a plain AIMessage with .content text, it returns an ALREADY
-# VALIDATED Plan object directly. No manual JSON parsing needed.
 structured_llm = llm.with_structured_output(Plan)
 
 
@@ -49,24 +36,22 @@ def get_plan(requirement: str) -> Plan:
 Break the following requirement into a small list of concrete coding tasks.
 Each task should map to ONE file to create.
 
-IMPORTANT: This project is Python-only. Every file_to_create MUST end in .py
-and every task must describe Python code. Do not use any other language.
+IMPORTANT RULES:
+- This project is Python-only. Every file_to_create MUST end in .py.
+- Do NOT create any test-related tasks (no test_*.py files, no testing
+  tasks at all). Testing is handled automatically by a separate Tester
+  agent later in the pipeline - you should only plan the actual SOURCE
+  CODE files needed to fulfill the requirement.
 
 Requirement: {requirement}
 """
-    
-    # Notice: no JSON instructions needed in the prompt anymore.
-    # LangChain handles telling the model how to format its response
-    # based on the Pydantic schema we gave it above.
     plan = structured_llm.invoke(prompt)
     return plan
 
 
 def load_requirement(path: str = "requirement.txt") -> str:
     if not os.path.exists(path):
-        raise FileNotFoundError(
-            f"{path} not found. Create it and write your requirement inside."
-        )
+        raise FileNotFoundError(f"{path} not found.")
     with open(path, "r") as f:
         return f.read().strip()
 
@@ -74,7 +59,6 @@ def load_requirement(path: str = "requirement.txt") -> str:
 if __name__ == "__main__":
     requirement = load_requirement()
     plan = get_plan(requirement)
-
     print("Requirement:", plan.requirement)
     print("\nTasks:")
     for task in plan.tasks:

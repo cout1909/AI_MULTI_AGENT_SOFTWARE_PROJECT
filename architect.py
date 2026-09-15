@@ -1,9 +1,5 @@
 """
-Architect Agent - same pattern as planner.py: structured output, no tools.
-
-Takes the Planner's task list and decides HOW to build it technically:
-what libraries to use, what the file structure should look like,
-any design notes the Developer agent should follow.
+Architect Agent - outputs an explicit tech stack.
 """
 
 import os
@@ -23,6 +19,9 @@ class FileDesign(BaseModel):
 
 class Architecture(BaseModel):
     approach_summary: str
+    language: str
+    framework: str
+    test_framework: str
     libraries_needed: List[str]
     files: List[FileDesign]
 
@@ -45,10 +44,17 @@ Requirement: {requirement}
 Planned tasks:
 {tasks_text}
 
-This project is Python-only. Decide the technical approach: what libraries
-are needed (keep it minimal, standard library where possible), what files
-should exist, and for each file, its purpose and the key functions/classes
-it should contain.
+Decide the full technical approach, including:
+- The programming language best suited to this requirement.
+- The framework needed, if any (use "none" if no framework is needed).
+- The test framework to use for this language (e.g. pytest for Python,
+  vitest or jest for JavaScript).
+- The libraries needed (keep minimal, standard library where possible).
+- The files that should exist, each with its purpose and key
+  functions/classes.
+
+Currently supported languages in this system: Python, JavaScript.
+Choose whichever fits the requirement best.
 """
 
     architecture = structured_llm.invoke(prompt)
@@ -59,12 +65,12 @@ if __name__ == "__main__":
     requirement = "Build a function that adds two numbers"
     task_descriptions = [
         "Implement the add function that takes two numbers and returns their sum.",
-        "Write unit tests to verify the add function works correctly.",
     ]
-
     architecture = get_architecture(requirement, task_descriptions)
-
     print("Approach:", architecture.approach_summary)
+    print("Language:", architecture.language)
+    print("Framework:", architecture.framework)
+    print("Test framework:", architecture.test_framework)
     print("\nLibraries needed:", architecture.libraries_needed)
     print("\nFiles:")
     for f in architecture.files:

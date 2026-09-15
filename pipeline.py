@@ -1,29 +1,16 @@
 """
-pipeline.py - TEST VERSION: Developer is told to write a deliberate bug,
-so we can confirm the Debugger loop actually fires inside the graph.
-
-Revert developer_node's prompt back to normal after this one test run.
+pipeline.py - The orchestrator. Every node is a thin wrapper calling
+the real, reusable agent logic. No duplicated logic here.
 """
 
-import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
 from langgraph.graph import StateGraph, START, END
 
 from pipeline_state import PipelineState
 from planner import get_plan
 from architect import get_architecture
-from tools import write_file, run_tests
-
-load_dotenv()
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    google_api_key=os.environ["GEMINI_API_KEY"],
-)
-
-llm_with_write = llm.bind_tools([write_file])
+from dev_agent import develop_file
+from tester_agent import write_tests_for_file, run_all_tests
+from debugger_agent import fix_bug
 
 
 def planner_node(state: PipelineState) -> dict:
@@ -40,9 +27,14 @@ def architect_node(state: PipelineState) -> dict:
     print("\n[ARCHITECT] Deciding technical approach...")
     task_descriptions = [t["description"] for t in state["tasks"]]
     architecture = get_architecture(state["requirement"], task_descriptions)
-    print(f"[ARCHITECT] Approach: {architecture.approach_summary}")
+    print(f"[ARCHITECT] Language: {architecture.language}, "
+          f"Framework: {architecture.framework}, "
+          f"Test framework: {architecture.test_framework}")
     return {
         "approach_summary": architecture.approach_summary,
+        "language": architecture.language,
+        "framework": architecture.framework,
+        "test_framework": architecture.test_framework,
         "libraries_needed": architecture.libraries_needed,
         "files": [f.model_dump() for f in architecture.files],
     }
@@ -50,90 +42,54 @@ def architect_node(state: PipelineState) -> dict:
 
 def developer_node(state: PipelineState) -> dict:
     print("\n[DEVELOPER] Writing code...")
-    task = state["tasks"][0]
 
-    # TEMPORARY TEST PROMPT - forces a deliberate bug so we can
-    # confirm the Debugger loop fires. REVERT after this test.
-    prompt = f"""You are a Developer agent.
+    files_description = "\n".join(
+        f"  - {f['filename']}: {f['purpose']} "
+        f"(should contain: {', '.join(f['key_functions_or_classes'])})"
+        for f in state.get("files", [])
+    )
 
-Task: {task['description']}
-Target file: {task['file_to_create']}
+    source_files = []
+    for task in state["tasks"]:
+        path = develop_file(
+            task,
+            language=state.get("language", "Python"),
+            framework=state.get("framework", "none"),
+            libraries=state.get("libraries_needed", []),
+            approach_summary=state.get("approach_summary", ""),
+            files_description=files_description,
+        )
+        if path:
+            source_files.append(path)
 
-Write clean, correct Python code that accomplishes this task.
-Then call the write_file tool to save it to disk at the target filename.
-"""
-
-    response = llm_with_write.invoke([HumanMessage(content=prompt)])
-    for call in response.tool_calls:
-        if call["name"] == "write_file":
-            result = write_file.invoke(call["args"])
-            print(f"[DEVELOPER] {result}")
-
-    return {"source_file": task["file_to_create"]}
+    return {"source_files": source_files}
 
 
 def tester_node(state: PipelineState) -> dict:
     print("\n[TESTER] Checking tests...")
-    source_file = state["source_file"]
-    test_file = state.get("test_file") or f"test_{source_file}"
 
-    if not os.path.exists(test_file):
-        print("[TESTER] No test file yet - writing one...")
-        with open(source_file, "r") as f:
-            source_code = f.read()
-        prompt = f"""You are a Tester agent.
+    test_framework = state.get("test_framework", "pytest")
+    test_files = [
+        write_tests_for_file(sf, test_framework) for sf in state["source_files"]
+    ]
 
-Here is the source code in {source_file}:
-
-{source_code}
-
-Write pytest tests for this code and save them to {test_file} using the write_file tool.
-"""
-        response = llm_with_write.invoke([HumanMessage(content=prompt)])
-        for call in response.tool_calls:
-            if call["name"] == "write_file":
-                result = write_file.invoke(call["args"])
-                print(f"[TESTER] {result}")
-
-    test_result = run_tests.invoke({"test_file": test_file})
-    status = "PASSED" if "PASSED" in test_result else "FAILED"
-    print(f"[TESTER] Status: {status}")
+    result = run_all_tests(test_files, test_framework)
+    print(f"[TESTER] Status: {result['status']}")
 
     return {
-        "test_file": test_file,
-        "test_status": status,
-        "test_output": test_result,
+        "test_files": test_files,
+        "test_status": result["status"],
+        "test_output": result["output"],
     }
 
 
 def debugger_node(state: PipelineState) -> dict:
     print("\n[DEBUGGER] Attempting to fix the bug...")
-    source_file = state["source_file"]
-    test_output = state["test_output"]
-
-    with open(source_file, "r") as f:
-        source_code = f.read()
-
-    prompt = f"""You are a Debugger agent.
-
-The file {source_file} currently has this code:
-
-{source_code}
-
-Running its tests produced this output:
-
-{test_output}
-
-Find the bug based on this real error output and fix {source_file}
-using the write_file tool. Rewrite the FULL corrected file.
-"""
-
-    response = llm_with_write.invoke([HumanMessage(content=prompt)])
-    for call in response.tool_calls:
-        if call["name"] == "write_file":
-            result = write_file.invoke(call["args"])
-            print(f"[DEBUGGER] {result}")
-
+    fix_bug(
+        state["source_files"],
+        state["test_output"],
+        language=state.get("language", "Python"),
+    )
     return {"debug_attempts": 1}
 
 
@@ -177,5 +133,8 @@ if __name__ == "__main__":
     final_state = graph.invoke(initial_state)
 
     print("\n===== PIPELINE COMPLETE =====")
+    print("Language:", final_state.get("language"))
+    print("Source files:", final_state.get("source_files"))
+    print("Test files:", final_state.get("test_files"))
     print("Final test status:", final_state.get("test_status"))
     print("Debug attempts used:", final_state.get("debug_attempts"))

@@ -22,13 +22,13 @@ class PipelineState(TypedDict):
     requirement: str
     tasks: List[Task]
     approach_summary: str
+    language: str
+    framework: str
+    test_framework: str
     libraries_needed: List[str]
     files: List[FileDesign]
-    source_file: str
-    test_file: str
+    source_files: List[str]
+    test_files: List[str]
     test_status: str
     test_output: str
-    # Annotated + operator.add = a REDUCER. Instead of each node's
-    # return value OVERWRITING debug_attempts, LangGraph ADDS it.
     debug_attempts: Annotated[int, operator.add]
-    final_status: str
