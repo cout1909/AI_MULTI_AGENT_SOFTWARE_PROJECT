@@ -20,6 +20,7 @@ class FileDesign(TypedDict):
 
 class PipelineState(TypedDict):
     requirement: str
+    workspace: str
     tasks: List[Task]
     approach_summary: str
     language: str

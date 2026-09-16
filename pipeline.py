@@ -1,16 +1,24 @@
 """
-pipeline.py - The orchestrator. Every node is a thin wrapper calling
-the real, reusable agent logic. No duplicated logic here.
+pipeline.py - The orchestrator. Creates an ISOLATED workspace per
+project and auto-commits inside it once tests pass.
 """
 
 from langgraph.graph import StateGraph, START, END
 
 from pipeline_state import PipelineState
+from workspace_manager import create_workspace
 from planner import get_plan
 from architect import get_architecture
 from dev_agent import develop_file
 from tester_agent import write_tests_for_file, run_all_tests
 from debugger_agent import fix_bug
+from tools import git_commit
+
+
+def setup_node(state: PipelineState) -> dict:
+    print("\n[WORKSPACE] Setting up isolated project folder...")
+    workspace = create_workspace(state["requirement"])
+    return {"workspace": workspace}
 
 
 def planner_node(state: PipelineState) -> dict:
@@ -53,6 +61,7 @@ def developer_node(state: PipelineState) -> dict:
     for task in state["tasks"]:
         path = develop_file(
             task,
+            workspace=state["workspace"],
             language=state.get("language", "Python"),
             framework=state.get("framework", "none"),
             libraries=state.get("libraries_needed", []),
@@ -69,11 +78,13 @@ def tester_node(state: PipelineState) -> dict:
     print("\n[TESTER] Checking tests...")
 
     test_framework = state.get("test_framework", "pytest")
+    workspace = state["workspace"]
     test_files = [
-        write_tests_for_file(sf, test_framework) for sf in state["source_files"]
+        write_tests_for_file(sf, workspace=workspace, test_framework=test_framework)
+        for sf in state["source_files"]
     ]
 
-    result = run_all_tests(test_files, test_framework)
+    result = run_all_tests(test_files, workspace=workspace, test_framework=test_framework)
     print(f"[TESTER] Status: {result['status']}")
 
     return {
@@ -88,9 +99,18 @@ def debugger_node(state: PipelineState) -> dict:
     fix_bug(
         state["source_files"],
         state["test_output"],
+        workspace=state["workspace"],
         language=state.get("language", "Python"),
     )
     return {"debug_attempts": 1}
+
+
+def commit_node(state: PipelineState) -> dict:
+    print("\n[GIT] Committing successful project...")
+    message = f"Auto-commit: {state['requirement']} - tests passing"
+    result = git_commit.invoke({"workspace": state["workspace"], "message": message})
+    print(f"[GIT] {result}")
+    return {}
 
 
 def route_after_testing(state: PipelineState) -> str:
@@ -103,13 +123,16 @@ def route_after_testing(state: PipelineState) -> str:
 
 
 graph_builder = StateGraph(PipelineState)
+graph_builder.add_node("setup", setup_node)
 graph_builder.add_node("planner", planner_node)
 graph_builder.add_node("architect", architect_node)
 graph_builder.add_node("developer", developer_node)
 graph_builder.add_node("tester", tester_node)
 graph_builder.add_node("debugger", debugger_node)
+graph_builder.add_node("commit", commit_node)
 
-graph_builder.add_edge(START, "planner")
+graph_builder.add_edge(START, "setup")
+graph_builder.add_edge("setup", "planner")
 graph_builder.add_edge("planner", "architect")
 graph_builder.add_edge("architect", "developer")
 graph_builder.add_edge("developer", "tester")
@@ -117,10 +140,11 @@ graph_builder.add_edge("developer", "tester")
 graph_builder.add_conditional_edges(
     "tester",
     route_after_testing,
-    {"pass": END, "fail": "debugger", "give_up": END},
+    {"pass": "commit", "fail": "debugger", "give_up": END},
 )
 
 graph_builder.add_edge("debugger", "tester")
+graph_builder.add_edge("commit", END)
 
 graph = graph_builder.compile()
 
@@ -133,6 +157,7 @@ if __name__ == "__main__":
     final_state = graph.invoke(initial_state)
 
     print("\n===== PIPELINE COMPLETE =====")
+    print("Workspace:", final_state.get("workspace"))
     print("Language:", final_state.get("language"))
     print("Source files:", final_state.get("source_files"))
     print("Test files:", final_state.get("test_files"))

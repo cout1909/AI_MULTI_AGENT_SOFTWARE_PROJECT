@@ -1,6 +1,5 @@
 """
-Debugger Agent - reusable function, used by BOTH the standalone script
-and pipeline.py.
+Debugger Agent - reusable function, now WORKSPACE-aware.
 """
 
 import os
@@ -19,10 +18,11 @@ llm = ChatGoogleGenerativeAI(
 llm_with_write = llm.bind_tools([write_file])
 
 
-def fix_bug(source_files: list, test_output: str, language: str = "Python") -> None:
+def fix_bug(source_files: list, test_output: str, workspace: str = ".", language: str = "Python") -> None:
     sources_text = ""
     for sf in source_files:
-        with open(sf, "r") as f:
+        full_path = os.path.join(workspace, sf)
+        with open(full_path, "r") as f:
             sources_text += f"\n--- {sf} ---\n{f.read()}\n"
 
     prompt = f"""You are a Debugger agent.
@@ -43,7 +43,12 @@ using the write_file tool (rewrite the FULL corrected file, same filename).
     response = llm_with_write.invoke([HumanMessage(content=prompt)])
     for call in response.tool_calls:
         if call["name"] == "write_file":
-            result = write_file.invoke(call["args"])
+            model_path = call["args"]["path"]
+            full_path = os.path.join(workspace, model_path)
+            result = write_file.invoke({
+                "path": full_path,
+                "content": call["args"]["content"],
+            })
             print(f"[DEBUGGER] {result}")
 
 
@@ -51,5 +56,6 @@ if __name__ == "__main__":
     result = run_tests.invoke({
         "test_files": ["test_calculator.py"],
         "test_framework": "pytest",
+        "workspace": ".",
     })
-    fix_bug(["calculator.py"], result, language="Python")
+    fix_bug(["calculator.py"], result, workspace=".", language="Python")
