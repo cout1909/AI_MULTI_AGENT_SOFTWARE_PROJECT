@@ -51,3 +51,4 @@ def git_commit(workspace: str, message: str) -> str:
     if result.returncode == 0:
         return f"Committed to {workspace}: {message}"
     return f"Nothing to commit or commit failed: {result.stdout}{result.stderr}"
+
