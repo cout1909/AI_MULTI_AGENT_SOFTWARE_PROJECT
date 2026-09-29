@@ -4,12 +4,10 @@ testing is owned entirely by the Tester agent, not planned here.
 """
 
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
 from pydantic import BaseModel
 from typing import List
-
-load_dotenv()
+from model_config import get_model, invoke_model
+from agent_files import validate_source_name
 
 
 class Task(BaseModel):
@@ -21,14 +19,6 @@ class Task(BaseModel):
 class Plan(BaseModel):
     requirement: str
     tasks: List[Task]
-
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    google_api_key=os.environ["GEMINI_API_KEY"],
-)
-
-structured_llm = llm.with_structured_output(Plan)
 
 
 def get_plan(requirement: str) -> Plan:
@@ -45,7 +35,12 @@ IMPORTANT RULES:
 
 Requirement: {requirement}
 """
-    plan = structured_llm.invoke(prompt)
+    plan = invoke_model(get_model().with_structured_output(Plan), prompt, "Planner")
+    if not plan.tasks:
+        raise ValueError("Planner returned no coding tasks.")
+    names = [validate_source_name(task.file_to_create) for task in plan.tasks]
+    if len({name.casefold() for name in names}) != len(names):
+        raise ValueError("Planner returned duplicate filenames.")
     return plan
 
 

@@ -1,79 +1,41 @@
-"""
-Tester Agent - reusable functions, now WORKSPACE-aware.
-"""
-
+"""Write requirement-based tests once, then rerun the same tests after fixes."""
+from pathlib import PurePosixPath
 import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
-from tools import write_file, run_tests
+from agent_files import generate_files, read_sources
+from tools import resolve_workspace_path, run_tests
 
-load_dotenv()
+def test_filename_for(source_file):
+    source = PurePosixPath(source_file.replace("\\", "/"))
+    # Keep the full source path, preventing collisions between packages.
+    return str(PurePosixPath("tests") / source.parent / f"test_{source.name}")
 
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    google_api_key=os.environ["GEMINI_API_KEY"],
-)
-
-llm_with_write = llm.bind_tools([write_file])
-
-
-def test_filename_for(source_file: str) -> str:
-    base_name = os.path.basename(source_file)
-    name_no_ext, ext = os.path.splitext(base_name)
-    if ext == ".py":
-        return f"test_{base_name}"
-    return f"{name_no_ext}.test{ext}"
-
-
-def write_tests_for_file(source_file: str, workspace: str = ".", test_framework: str = "pytest") -> str:
+def write_tests_for_file(source_file, workspace=".", test_framework="pytest",
+                         requirement="", approach_summary="", source_files=None):
+    if test_framework != "pytest":
+        raise ValueError("Only pytest is supported.")
     test_file = test_filename_for(source_file)
-    full_source_path = os.path.join(workspace, source_file)
-    full_test_path = os.path.join(workspace, test_file)
-
-    if not os.path.exists(full_test_path):
-        print(f"[TESTER] Writing {test_file}...")
-        with open(full_source_path, "r") as f:
-            source_code = f.read()
-
-        prompt = f"""You are a Tester agent.
-
-Here is the source code in {source_file}:
-
-{source_code}
-
-Test framework to use: {test_framework}
-
-Write tests for this code using {test_framework} and save them to
-{test_file} using the write_file tool.
+    full_test_path = resolve_workspace_path(workspace, test_file)
+    if not full_test_path.exists():
+        prompt = f"""You are a Python Tester.
+Original user requirement (the specification): {requirement}
+Architecture: {approach_summary}
+Source under test: {source_file}
+Project sources:
+{read_sources(workspace, source_files or [source_file])}
+Write pytest tests for the specified behavior, with independently derived
+expected values, boundary cases and invalid input where appropriate.
+Do not copy implementation mistakes into expected values. Include meaningful
+assertions. Import the real project modules using their full package paths.
+Tests should be deterministic and not require external services. If this is a
+package initializer, test its public imports. Never modify source code.
+Call save_source exactly once to write the complete {test_file}.
 """
-        response = llm_with_write.invoke([HumanMessage(content=prompt)])
-        for call in response.tool_calls:
-            if call["name"] == "write_file":
-                model_path = call["args"]["path"]
-                full_path = os.path.join(workspace, model_path)
-                result = write_file.invoke({
-                    "path": full_path,
-                    "content": call["args"]["content"],
-                })
-                print(f"[TESTER] {result}")
-
+        generate_files(prompt, workspace, [test_file], "Tester")
+    if not full_test_path.is_file() or not full_test_path.read_text(encoding="utf-8").strip():
+        raise ValueError(f"Missing or empty test file: {test_file}")
     return test_file
 
-
-def run_all_tests(test_files: list, workspace: str = ".", test_framework: str = "pytest") -> dict:
-    test_result = run_tests.invoke({
-        "test_files": test_files,
-        "test_framework": test_framework,
-        "workspace": workspace,
-    })
-    status = "PASSED" if "PASSED" in test_result else "FAILED"
-    return {"status": status, "output": test_result}
-
-
-if __name__ == "__main__":
-    source_file = "calculator.py"
-    test_file = write_tests_for_file(source_file, workspace=".")
-    result = run_all_tests([test_file], workspace=".")
-    print(f"\nStatus: {result['status']}")
-    print(result["output"])
+def run_all_tests(test_files, workspace=".", test_framework="pytest"):
+    return run_tests.invoke({"test_files": test_files, "workspace": workspace,
+                             "test_framework": test_framework,
+                             "timeout_seconds": int(os.getenv("TEST_TIMEOUT_SECONDS", "120"))})

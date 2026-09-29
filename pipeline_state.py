@@ -33,3 +33,6 @@ class PipelineState(TypedDict):
     test_status: str
     test_output: str
     debug_attempts: Annotated[int, operator.add]
+    commit_status: str
+    commit_output: str
+    commit_hash: str | None

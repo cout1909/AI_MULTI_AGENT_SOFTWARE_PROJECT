@@ -12,7 +12,11 @@ from architect import get_architecture
 from dev_agent import develop_file
 from tester_agent import write_tests_for_file, run_all_tests
 from debugger_agent import fix_bug
-from tools import git_commit
+from tools import git_commit, write_file, resolve_workspace_path
+from progress import emit
+from functools import wraps
+from time import perf_counter
+from progress import BuildCancelled
 
 
 def setup_node(state: PipelineState) -> dict:
@@ -33,12 +37,19 @@ def planner_node(state: PipelineState) -> dict:
 
 def architect_node(state: PipelineState) -> dict:
     print("\n[ARCHITECT] Deciding technical approach...")
-    task_descriptions = [t["description"] for t in state["tasks"]]
+    task_descriptions = [f"{t['file_to_create']}: {t['description']}" for t in state["tasks"]]
     architecture = get_architecture(state["requirement"], task_descriptions)
     print(f"[ARCHITECT] Language: {architecture.language}, "
           f"Framework: {architecture.framework}, "
           f"Test framework: {architecture.test_framework}")
+    for file in architecture.files:
+        resolve_workspace_path(state["workspace"], file.filename)
+    write_file.invoke({"workspace": state["workspace"], "path": "requirements.txt",
+                       "content": "\n".join(architecture.libraries_needed + ["pytest"]) + "\n"})
     return {
+        "tasks": [{"id": index, "description": file.purpose,
+                   "file_to_create": file.filename}
+                  for index, file in enumerate(architecture.files, 1)],
         "approach_summary": architecture.approach_summary,
         "language": architecture.language,
         "framework": architecture.framework,
@@ -67,10 +78,14 @@ def developer_node(state: PipelineState) -> dict:
             libraries=state.get("libraries_needed", []),
             approach_summary=state.get("approach_summary", ""),
             files_description=files_description,
+            source_files=source_files,
+            requirement=state["requirement"],
         )
         if path:
             source_files.append(path)
 
+    if not source_files:
+        raise ValueError("Developer produced no source files.")
     return {"source_files": source_files}
 
 
@@ -80,12 +95,17 @@ def tester_node(state: PipelineState) -> dict:
     test_framework = state.get("test_framework", "pytest")
     workspace = state["workspace"]
     test_files = [
-        write_tests_for_file(sf, workspace=workspace, test_framework=test_framework)
+        write_tests_for_file(sf, workspace=workspace, test_framework=test_framework,
+                             requirement=state["requirement"],
+                             approach_summary=state["approach_summary"],
+                             source_files=state["source_files"])
         for sf in state["source_files"]
     ]
 
     result = run_all_tests(test_files, workspace=workspace, test_framework=test_framework)
     print(f"[TESTER] Status: {result['status']}")
+    emit("test_result", agent="Tester", status=result["status"],
+         output=result["output"], message=f"Tests: {result['status']}")
 
     return {
         "test_files": test_files,
@@ -101,6 +121,8 @@ def debugger_node(state: PipelineState) -> dict:
         state["test_output"],
         workspace=state["workspace"],
         language=state.get("language", "Python"),
+        requirement=state["requirement"],
+        test_files=state["test_files"],
     )
     return {"debug_attempts": 1}
 
@@ -110,26 +132,53 @@ def commit_node(state: PipelineState) -> dict:
     message = f"Auto-commit: {state['requirement']} - tests passing"
     result = git_commit.invoke({"workspace": state["workspace"], "message": message})
     print(f"[GIT] {result}")
-    return {}
+    return {"commit_status": result["status"], "commit_output": result["output"],
+            "commit_hash": result.get("commit")}
 
 
 def route_after_testing(state: PipelineState) -> str:
     if state["test_status"] == "PASSED":
+        if not state.get("debug_attempts", 0):
+            emit("agent_skip", agent="Debugger", message="Debugger: not needed; tests passed.")
         return "pass"
+    if state["test_status"] in {"ERROR", "TIMEOUT"}:
+        return "give_up"
     if state.get("debug_attempts", 0) >= 3:
         print("\n[ROUTER] Max debug attempts reached. Giving up.")
         return "give_up"
     return "fail"
 
 
+def observed(name, function):
+    @wraps(function)
+    def run(state):
+        emit("agent_start", agent=name, message=f"{name}: started")
+        started = perf_counter()
+        try:
+            result = function(state)
+        except BuildCancelled:
+            raise
+        except Exception:
+            emit("agent_error", agent=name, elapsed_ms=round((perf_counter() - started) * 1000),
+                 message=f"{name}: stopped with an error.")
+            raise
+        failed = (result.get("test_status") not in (None, "PASSED")
+                  or result.get("commit_status") == "FAILED")
+        emit("agent_end", agent=name, status="failed" if failed else "completed",
+             elapsed_ms=round((perf_counter() - started) * 1000),
+             message=f"{name}: {'needs attention' if failed else 'finished'}")
+        return result
+    return run
+
+
 graph_builder = StateGraph(PipelineState)
-graph_builder.add_node("setup", setup_node)
-graph_builder.add_node("planner", planner_node)
-graph_builder.add_node("architect", architect_node)
-graph_builder.add_node("developer", developer_node)
-graph_builder.add_node("tester", tester_node)
-graph_builder.add_node("debugger", debugger_node)
-graph_builder.add_node("commit", commit_node)
+for key, label, function in [
+    ("setup", "Workspace", setup_node), ("planner", "Planner", planner_node),
+    ("architect", "Architect", architect_node), ("developer", "Developer", developer_node),
+    ("tester", "Tester", tester_node), ("debugger", "Debugger", debugger_node),
+    ("commit", "Git", commit_node),
+]:
+    graph_builder.add_node(key, observed(label, function))
 
 graph_builder.add_edge(START, "setup")
 graph_builder.add_edge("setup", "planner")

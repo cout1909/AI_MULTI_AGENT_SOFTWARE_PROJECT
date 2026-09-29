@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#f4f3ec">
+  <meta name="description" content="Relay is your AI development studio. Turn a brief into code and follow every agent as it builds, tests, and delivers.">
+  <title>Relay — Your ideas, in motion.</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40'%3E%3Crect width='40' height='40' rx='10' fill='%23d5fa57'/%3E%3Cpath d='M10 11h12l-6 9h14L18 31l5-9H10z' fill='%23232620'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="style.css?v=relay-2">
+  <script defer src="run-state.js?v=relay-2"></script>
+  <script defer src="script.js?v=relay-2"></script>
+</head>
+<body>
+<a class="skip-link" href="#workbench">Skip to workbench</a>
+<header class="site-header">
+  <a class="brand" href="#top" aria-label="Relay home"><span class="brand-mark" aria-hidden="true">↗</span>relay<span class="brand-period">.</span></a>
+  <nav aria-label="Main navigation"><a class="nav-link" href="#workbench">Workbench</a><a class="nav-link" href="#activity">Activity</a><a class="nav-link" href="#output">Output <span aria-hidden="true">↗</span></a></nav>
+  <span class="connection" id="connection"><span class="status-dot"></span><span id="connectionLabel">Connecting</span></span>
+</header>
+<main id="top">
+  <section class="hero" aria-labelledby="heroTitle">
+    <div><p class="eyebrow"><span class="small-cross" aria-hidden="true">✳</span> YOUR INDEPENDENT BUILD STUDIO</p><h1 id="heroTitle">Big idea.<br>Meet your <span class="crew-word">crew.<svg viewBox="0 0 260 20" aria-hidden="true"><path d="M3 13 Q120 0 255 11 M20 18 Q150 5 233 16"/></svg></span></h1><p class="hero-description">One brief. Five AI specialists.<br>Watch your idea become tested, committed code.</p></div>
+    <div class="hero-art" aria-hidden="true"><div class="art-orbit"></div><span class="art-label">FROM THOUGHT<br>TO THING.</span><div class="art-card art-brief"><span>01 / THE IDEA</span><b>What if...</b><i>↗</i></div><div class="art-card art-code"><span>02 / THE BUILD</span><b>{ make it real }</b><div class="code-lines"><i></i><i></i><i></i></div></div><div class="art-stamp">MADE<br>WITH<br><b>AGENTS ✳</b></div></div>
+  </section>
+  <div class="section-heading" id="workbench"><div><span class="index">01</span><h2>The workbench</h2></div><span class="section-note">A small brief can start something big.</span></div>
+  <div class="workbench-grid">
+    <section class="brief-panel panel" aria-labelledby="briefTitle">
+      <div class="panel-top"><span class="eyebrow">THE STARTING POINT</span><span class="pill">Python builds</span></div>
+      <h3 id="briefTitle">What are we making?</h3><p class="muted">Tell the crew what it should do. Add the details that matter.</p>
+      <form id="buildForm">
+        <label class="sr-only" for="requirementInput">Describe your software requirement</label>
+        <div class="textarea-wrap"><textarea id="requirementInput" maxlength="20000" required rows="7" placeholder="Build a temperature converter with Celsius and Fahrenheit functions. Test freezing, boiling, and round-trip conversions..."></textarea><div class="input-meta"><span>Plain English → Python</span><span id="charCount">0 / 20,000</span></div></div>
+        <p class="sample-label">NEED A STARTING POINT?</p>
+        <div class="samples"><button type="button" class="sample" data-example="converter">↗ Temperature converter</button><button type="button" class="sample" data-example="text">↗ Text analyser</button><button type="button" class="sample" data-example="calculator">↗ Calculator</button></div>
+        <div class="brief-bottom"><p><span class="tiny-star" aria-hidden="true">✳</span> Planned. Built. Tested. Committed.</p><button type="submit" class="launch-button" id="buildButton"><span id="buildButtonLabel">Let's build it</span><span class="button-arrow" aria-hidden="true">↗</span></button><span class="shortcut">or press <kbd>Ctrl</kbd> + <kbd>Enter</kbd></span></div>
+      </form>
+    </section>
+    <section class="pipeline-panel panel" aria-labelledby="pipelineTitle">
+      <div class="panel-top"><div class="title-with-dot"><span class="live-dot" id="liveDot"></span><h3 id="pipelineTitle">Your crew, in motion</h3></div><span id="runBadge" class="pill">Standing by</span></div>
+      <div class="live-focus" id="liveFocus" data-status="idle"><div class="focus-symbol" aria-hidden="true"><span></span><span></span><span></span><span></span></div><div class="focus-copy"><span class="eyebrow" id="focusEyebrow">READY WHEN YOU ARE</span><h4 id="focusTitle">Good things start with a brief.</h4><p id="focusDescription">Your agents will appear here as they work.</p></div><span class="focus-arrow" aria-hidden="true">↗</span></div>
+      <div class="run-metrics"><div><span>ELAPSED</span><strong id="elapsed">00:00</strong></div><div><span>FILES SAVED</span><strong id="fileCount">00</strong></div><div><span>REPAIR PASSES</span><strong id="repairCount">00</strong></div></div>
+      <ol class="stage-list" id="stageList" aria-label="Actual pipeline stages"></ol>
+      <p class="pipeline-footnote"><span aria-hidden="true">↗</span> Debugger joins only when tests need a fix.</p>
+    </section>
+  </div>
+  <div class="section-heading" id="activity"><div><span class="index">02</span><h2>Behind the build</h2></div><span class="section-note">Every handoff. Nothing hidden.</span></div>
+  <div class="detail-grid">
+    <section class="activity-panel panel" aria-labelledby="activityTitle"><div class="panel-top"><h3 id="activityTitle">Studio activity</h3><button type="button" class="text-button" id="downloadLog" disabled>Save log ↓</button></div>
+      <div class="tabs" role="tablist" aria-label="Build details"><button type="button" id="activityTab" role="tab" aria-selected="true" aria-controls="feedPanel">Live feed <span id="eventCount">0</span></button><button type="button" id="testsTab" role="tab" aria-selected="false" aria-controls="testsPanel" tabindex="-1">Test output</button></div>
+      <div id="feedPanel" role="tabpanel" aria-labelledby="activityTab"><div class="feed" id="feed"><div class="feed-empty"><span aria-hidden="true">↗</span><h4>The story starts here.</h4><p>Agent updates, retries, and saved files.<br>Real events from your running build.</p></div></div></div>
+      <div id="testsPanel" role="tabpanel" aria-labelledby="testsTab" hidden><pre id="testOutput" tabindex="0">No tests have run yet.</pre></div>
+    </section>
+    <section class="output-panel panel" id="output" aria-labelledby="outputTitle"><div class="panel-top"><h3 id="outputTitle">The handoff</h3><span class="pill" id="outputBadge">No build yet</span></div>
+      <div id="outputEmpty" class="output-empty"><div class="file-illustration" aria-hidden="true"><span>{ }</span><i>✓</i></div><h4>From brief to build.</h4><p>Your saved files, test result, and Git commit will land right here.</p></div>
+      <div id="outputContent" hidden><div class="outcome" id="outcome"></div><dl class="result-metrics"><div><dt>Tests</dt><dd id="testStatus">—</dd></div><div><dt>Language</dt><dd id="languageValue">—</dd></div><div><dt>Git commit</dt><dd id="commitValue">—</dd></div></dl><div class="artifact-header"><span class="eyebrow">SAVED FILES</span><span class="muted">On your machine</span></div><ul id="fileList" class="file-list"></ul><div class="workspace"><div><span class="workspace-label">PROJECT LOCATION</span><button type="button" id="copyPath" class="text-button" disabled>Copy path ↗</button></div><code id="workspacePath"></code></div></div>
+    </section>
+  </div>
+  <footer><a class="brand footer-brand" href="#top">relay.</a><p>Less busywork. More building.</p><span>YOUR LOCAL DEVELOPMENT STUDIO <span aria-hidden="true">↗</span></span></footer>
+</main>
+<p class="sr-only" id="announcement" role="status" aria-live="polite"></p>
+</body>
+</html>

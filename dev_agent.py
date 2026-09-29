@@ -1,71 +1,24 @@
-"""
-Developer Agent - reusable function, now WORKSPACE-aware.
-"""
+"""Generate each file with the architecture and existing source as context."""
+from agent_files import generate_files, read_sources
 
-import os
-from dotenv import load_dotenv
-from langchain_google_genai import ChatGoogleGenerativeAI
-from langchain_core.messages import HumanMessage
-from tools import write_file
-
-load_dotenv()
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-3.6-flash",
-    google_api_key=os.environ["GEMINI_API_KEY"],
-)
-
-llm_with_write = llm.bind_tools([write_file])
-
-
-def develop_file(
-    task: dict,
-    workspace: str = ".",
-    language: str = "Python",
-    framework: str = "none",
-    libraries: list = None,
-    approach_summary: str = "",
-    files_description: str = "",
-) -> str:
-    libraries = libraries or []
-
-    prompt = f"""You are a Developer agent.
-
+def develop_file(task, workspace=".", language="Python", framework="none",
+                 libraries=None, approach_summary="", files_description="",
+                 source_files=None, requirement=""):
+    if language != "Python":
+        raise ValueError("Only Python is supported.")
+    target = task["file_to_create"]
+    prompt = f"""You are a Python Developer.
+Original requirement: {requirement}
 Task: {task['description']}
-Target file: {task['file_to_create']}
-
-Language: {language}
-Framework: {framework}
-Libraries to use: {libraries}
-
-Architecture approach: {approach_summary}
-File designs:
-{files_description}
-
-Write clean, correct code in the specified LANGUAGE. Then call the
-write_file tool to save it to disk at the target filename.
+Target file: {target}
+Framework: {framework}. Libraries: {libraries or []}
+Architecture: {approach_summary}
+File designs and interfaces: {files_description}
+Already implemented source (preserve these public interfaces):
+{read_sources(workspace, source_files or [])}
+Write correct Python implementing the requirement. Match existing imports and
+function signatures. Avoid running servers or interactive input at import time.
+Call save_source exactly once with the complete code for {target}.
 """
-
-    response = llm_with_write.invoke([HumanMessage(content=prompt)])
-
-    written_path = None
-    for call in response.tool_calls:
-        if call["name"] == "write_file":
-            model_path = call["args"]["path"]
-            full_path = os.path.join(workspace, model_path)
-            result = write_file.invoke({
-                "path": full_path,
-                "content": call["args"]["content"],
-            })
-            print(f"[DEVELOPER] {result}")
-            written_path = model_path
-
-    return written_path
-
-
-if __name__ == "__main__":
-    task = {
-        "description": "Implement an add function that takes two numbers and returns their sum.",
-        "file_to_create": "calculator.py",
-    }
-    develop_file(task, workspace=".")
+    generate_files(prompt, workspace, [target], "Developer")
+    return target
